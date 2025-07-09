@@ -1,6 +1,6 @@
-streamlit
-plotly
-tensorflow
+streamlit>=1.35.0
 pillow
 numpy
 pandas
+plotly
+tensorflow==2.15.0
