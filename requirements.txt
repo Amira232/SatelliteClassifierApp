@@ -3,3 +3,4 @@ plotly>=6.2.0
 pillow
 numpy
 pandas
+tensorflow
