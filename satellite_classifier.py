@@ -3,123 +3,97 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 import plotly.express as px
-import os
 
-# TensorFlow Import
+# Try to import TensorFlow, fall back to demo mode if not available
 try:
     import tensorflow as tf
     from tensorflow.keras.models import load_model
     from tensorflow.keras.preprocessing import image
-
     TENSORFLOW_AVAILABLE = True
-except Exception as e:
+except ImportError:
     TENSORFLOW_AVAILABLE = False
-    st.error(f"TensorFlow Import Error: {e}")
+    st.warning("⚠️ TensorFlow not found. Running in demo mode with simulated predictions.")
 
-# Page Configuration
+# Page configuration
 st.set_page_config(
     page_title="Satellite Image Classifier",
     page_icon="🛰️",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# Class Information
+# Class information
 CLASS_INFO = {
     'Cloudy': {
-        'description': 'Areas covered by clouds.',
+        'description': 'Areas covered by clouds, typically appearing white or gray in satellite imagery.',
         'color': '#87CEEB',
         'icon': '☁️'
     },
     'Desert': {
-        'description': 'Arid land with little vegetation.',
+        'description': 'Arid land areas with minimal vegetation, appearing as brown or tan regions.',
         'color': '#F4A460',
         'icon': '🏜️'
     },
     'Green_Area': {
-        'description': 'Vegetation, forests, grasslands.',
+        'description': 'Vegetated areas including forests, grasslands, and agricultural land.',
         'color': '#228B22',
         'icon': '🌳'
     },
     'Water': {
-        'description': 'Lakes, rivers, oceans.',
+        'description': 'Bodies of water including oceans, lakes, rivers, and reservoirs.',
         'color': '#4682B4',
         'icon': '💧'
     }
 }
 
-# Load Model
 @st.cache_resource
 def load_classification_model():
-
+    """Load the pre-trained model"""
     if not TENSORFLOW_AVAILABLE:
-        return None
-
-    model_path = "Modelenv.v1.h5"
+        return "demo_model"
 
     try:
-        if not os.path.exists(model_path):
-            st.error(f"❌ Model file not found: {model_path}")
-            return None
-
-        st.sidebar.write("📂 Model found")
-
-        model_size = os.path.getsize(model_path) / (1024 * 1024)
-        st.sidebar.write(f"📦 Model Size: {model_size:.2f} MB")
-
-        model = load_model(model_path, compile=False)
-
-        st.sidebar.success("✅ TensorFlow Model Loaded Successfully")
+        model = load_model('Modelenv.v1.h5')
+        st.sidebar.success("✅ Real TensorFlow model loaded.")
         return model
-
     except Exception as e:
-        st.error(f"❌ Model Loading Error:\n{e}")
-        return None
+        st.sidebar.error(f"🚫 Error loading model: {str(e)}")
+        st.sidebar.info("Please place 'Modelenv.v1.h5' in the same folder as this script.")
+        return "demo_model"
 
-
-# Image Preprocessing
 def preprocess_image(img):
+    """Preprocess image for prediction"""
+    if not TENSORFLOW_AVAILABLE:
+        return np.random.rand(1, 255, 255, 3)
 
-    img = img.convert("RGB")
     img = img.resize((255, 255))
-
     img_array = image.img_to_array(img)
     img_array = np.expand_dims(img_array, axis=0)
     img_array = img_array / 255.0
-
     return img_array
 
-
-# Prediction Function
 def predict_image(model, img_array):
+    """Make prediction on preprocessed image"""
+    class_names = ['Cloudy', 'Desert', 'Green_Area', 'Water']
 
-    class_names = [
-        'Cloudy',
-        'Desert',
-        'Green_Area',
-        'Water'
-    ]
+    if not TENSORFLOW_AVAILABLE or model == "demo_model":
+        np.random.seed()
+        prediction = np.random.dirichlet(np.ones(4))
+        prediction = prediction.reshape(1, -1)
+    else:
+        prediction = model.predict(img_array)
 
-    prediction = model.predict(img_array)
+    predicted_class_idx = np.argmax(prediction[0])
+    predicted_class = class_names[predicted_class_idx]
+    confidence = prediction[0][predicted_class_idx]
 
-    st.write("Raw Prediction:", prediction[0])
+    st.write("🔍 Raw model prediction output:", prediction[0])
 
-    predicted_index = np.argmax(prediction[0])
-
-    predicted_class = class_names[predicted_index]
-
-    confidence = float(prediction[0][predicted_index])
-
-    probabilities = {
-        class_names[i]: float(prediction[0][i])
-        for i in range(len(class_names))
-    }
-
+    probabilities = {class_names[i]: float(prediction[0][i]) for i in range(len(class_names))}
     return predicted_class, confidence, probabilities
 
-
-# Confidence Chart
 def create_confidence_chart(probabilities):
-
+    """Create an interactive confidence chart"""
     classes = list(probabilities.keys())
     values = list(probabilities.values())
 
@@ -127,128 +101,73 @@ def create_confidence_chart(probabilities):
         x=classes,
         y=values,
         color=classes,
-        color_discrete_map={
-            cls: CLASS_INFO[cls]['color']
-            for cls in classes
-        },
-        title="Prediction Confidence Scores"
+        color_discrete_map={cls: CLASS_INFO[cls]['color'] for cls in classes},
+        title="Prediction Confidence Scores",
+        labels={'x': 'Land Cover Class', 'y': 'Confidence Score'}
     )
 
     fig.update_layout(
         showlegend=False,
-        yaxis=dict(range=[0, 1]),
-        height=400
+        height=400,
+        xaxis_title="Land Cover Class",
+        yaxis_title="Confidence Score",
+        yaxis=dict(range=[0, 1])
     )
-
     return fig
 
-
-# Main App
 def main():
-
     st.title("🛰️ Satellite Image Classifier")
 
     st.markdown("""
-    Upload a satellite image and classify it into:
-
-    - ☁️ Cloudy
-    - 🏜️ Desert
-    - 🌳 Green Area
-    - 💧 Water
+        📸 Upload a satellite image and let the model classify it as:
+        - ☁️ Cloudy
+        - 🏜️ Desert
+        - 🌳 Green Area
+        - 💧 Water
     """)
 
-    # Debug Information
-    st.sidebar.header("System Information")
+    st.sidebar.header("🎯 Classification Categories")
+    for name, data in CLASS_INFO.items():
+        st.sidebar.markdown(f"- {data['icon']} **{name}**: {data['description']}")
 
-    st.sidebar.write("Current Directory:")
-    st.sidebar.code(os.getcwd())
+    st.sidebar.header("🚀 How to Use")
+    st.sidebar.markdown("1. Upload a satellite image\n2. View the classification\n3. Analyze confidence scores")
 
-    st.sidebar.write("Files Available:")
-
-    try:
-        st.sidebar.code("\n".join(os.listdir()))
-    except:
-        pass
-
-    # Load Model
+    # Load model
     model = load_classification_model()
+    if model == "demo_model":
+        st.warning("⚠️ Running in demo mode — model not loaded.")
+    else:
+        st.success("✅ Model is ready.")
 
-    if model is None:
-        st.error("⚠️ Model could not be loaded.")
-        st.stop()
-
-    st.success("✅ Model Ready")
-
-    uploaded_file = st.file_uploader(
-        "Upload Satellite Image",
-        type=["jpg", "jpeg", "png"]
-    )
+    uploaded_file = st.file_uploader("📤 Upload Satellite Image", type=["jpg", "jpeg", "png"])
 
     if uploaded_file:
-
         image_pil = Image.open(uploaded_file)
+        st.image(image_pil, caption="Uploaded Image", use_column_width=True)
 
-        st.image(
-            image_pil,
-            caption="Uploaded Image",
-            use_container_width=True
-        )
-
-        with st.spinner("Classifying..."):
-
+        with st.spinner("Classifying image..."):
             img_array = preprocess_image(image_pil)
+            predicted_class, confidence, probabilities = predict_image(model, img_array)
 
-            predicted_class, confidence, probabilities = predict_image(
-                model,
-                img_array
-            )
-
-        st.markdown("---")
-
-        icon = CLASS_INFO[predicted_class]["icon"]
-
-        st.markdown(
-            f"## {icon} Prediction: {predicted_class}"
-        )
-
-        st.markdown(
-            f"### Confidence: {confidence:.2%}"
-        )
-
-        st.write(
-            CLASS_INFO[predicted_class]["description"]
-        )
+        icon = CLASS_INFO[predicted_class]['icon']
+        st.markdown(f"### 🎯 Prediction: {icon} **{predicted_class}**")
+        st.markdown(f"**Confidence Score:** {confidence:.2%}")
+        st.markdown(f"📄 {CLASS_INFO[predicted_class]['description']}")
 
         st.markdown("---")
+        st.markdown("### 📊 Confidence Scores")
+        st.plotly_chart(create_confidence_chart(probabilities), use_container_width=True)
 
-        st.plotly_chart(
-            create_confidence_chart(probabilities),
-            use_container_width=True
-        )
-
+        st.markdown("### 📈 Detailed Confidence Table")
         df = pd.DataFrame({
-            "Class": probabilities.keys(),
-            "Confidence": [
-                f"{v:.2%}" for v in probabilities.values()
-            ]
-        })
-
-        st.dataframe(df)
+            "Class": list(probabilities.keys()),
+            "Confidence": [f"{v:.2%}" for v in probabilities.values()]
+        }).sort_values(by="Confidence", ascending=False)
+        st.dataframe(df, use_container_width=True)
 
         st.markdown("---")
-
-        st.write(
-            f"Image Size: {image_pil.width} x {image_pil.height}"
-        )
-
-        st.write(
-            f"Image Mode: {image_pil.mode}"
-        )
-
-        st.write(
-            f"Image Format: {image_pil.format}"
-        )
-
+        st.markdown(f"📏 **Image Details:** {image_pil.width} × {image_pil.height}, Mode: {image_pil.mode}, Format: {image_pil.format}")
 
 if __name__ == "__main__":
     main()
